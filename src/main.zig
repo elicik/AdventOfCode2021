@@ -12,7 +12,13 @@ pub fn main() !void {
             defer allocator.free(file);
             const result = try day01.day01a(allocator, file);
             defer allocator.free(result);
-            std.debug.print("Day 1a result: {s}", .{result});
+            std.debug.print("Day 1a result: {s}\n", .{result});
+        } else if (std.mem.eql(u8, arg, "1b")) {
+            const file = try getLinesFromFile(allocator, "src/day01.txt");
+            defer allocator.free(file);
+            const result = try day01.day01b(allocator, file);
+            defer allocator.free(result);
+            std.debug.print("Day 1b result: {s}\n", .{result});
         } else {
             std.debug.print("Got an unfinished day: {s}.\n", .{arg});
         }
