@@ -1,5 +1,6 @@
 const std = @import("std");
 const day01 = @import("day01.zig");
+const day02 = @import("day02.zig");
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
@@ -19,6 +20,19 @@ pub fn main() !void {
             const result = try day01.day01b(allocator, file);
             defer allocator.free(result);
             std.debug.print("Day 1b result: {s}\n", .{result});
+        }
+        if (std.mem.eql(u8, arg, "2a")) {
+            const file = try getLinesFromFile(allocator, "src/day02.txt");
+            defer allocator.free(file);
+            const result = try day02.day02a(allocator, file);
+            defer allocator.free(result);
+            std.debug.print("Day 2a result: {s}\n", .{result});
+        } else if (std.mem.eql(u8, arg, "2b")) {
+            const file = try getLinesFromFile(allocator, "src/day02.txt");
+            defer allocator.free(file);
+            const result = try day02.day02b(allocator, file);
+            defer allocator.free(result);
+            std.debug.print("Day 2b result: {s}\n", .{result});
         } else {
             std.debug.print("Got an unfinished day: {s}.\n", .{arg});
         }

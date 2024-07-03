@@ -1,6 +1,6 @@
 # AdventOfCode2021
 
-My first ever time trying Zig!
+My first ever time trying Zig! Let's see if we can solve every problem, and as a bonus, use only the standard library.
 
 To build:
 ```
