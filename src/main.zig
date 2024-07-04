@@ -61,6 +61,13 @@ pub fn main() !void {
             defer allocator.free(result);
             std.debug.print("Day 4a result: {s}\n", .{result});
         }
+        if (all or std.mem.eql(u8, arg, "4b")) {
+            const file = try getLinesFromFile(allocator, "src/day04.txt");
+            defer allocator.free(file);
+            const result = try day04.day04b(allocator, file);
+            defer allocator.free(result);
+            std.debug.print("Day 4b result: {s}\n", .{result});
+        }
     }
 }
 

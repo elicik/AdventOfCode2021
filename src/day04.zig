@@ -95,15 +95,70 @@ pub fn day04a(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
     // }
 
     var moves: [100]bool = [_]bool{false} ** 100;
-    var score: u64 = undefined;
     while (move_draws_iterator.next()) |move_str| {
         const move = try std.fmt.parseInt(u8, move_str, 10);
         moves[move] = true;
         for (boards) |board| {
             if (board.isWon(moves)) {
-                score = board.getScore(moves, move);
+                const score = board.getScore(moves, move);
                 return std.fmt.allocPrint(allocator, "{d}", .{score});
             }
+        }
+    }
+    unreachable;
+}
+
+pub fn day04b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
+    var line_iterator = std.mem.splitScalar(u8, file, '\n');
+    var move_draws_iterator = std.mem.splitScalar(u8, line_iterator.first(), ',');
+    var boards_iterator = std.mem.splitSequence(u8, line_iterator.rest(), "\n\n");
+
+    var num_boards: u64 = 0;
+    while (boards_iterator.next()) |_| {
+        num_boards += 1;
+    }
+    boards_iterator.reset();
+
+    var boards: []Board = try allocator.alloc(Board, num_boards);
+    defer allocator.free(boards);
+    var i: u64 = 0;
+    while (boards_iterator.next()) |raw_board| : (i += 1) {
+        var board = Board{};
+        try board.init(raw_board);
+        boards[i] = board;
+    }
+
+    var moves: [100]bool = [_]bool{false} ** 100;
+
+    var already_won: []bool = try allocator.alloc(bool, num_boards);
+    defer allocator.free(already_won);
+
+    for (0..num_boards) |board_num| {
+        already_won[board_num] = false;
+    }
+
+    var last_to_win: u64 = std.math.maxInt(u64);
+
+    while (move_draws_iterator.next()) |move_str| {
+        const move = try std.fmt.parseInt(u8, move_str, 10);
+        moves[move] = true;
+        for (boards, 0..) |board, board_i| {
+            if (!already_won[board_i] and board.isWon(moves)) {
+                already_won[board_i] = true;
+                last_to_win = board_i;
+            }
+        }
+
+        const all_won = for (already_won) |won| {
+            if (!won) {
+                break false;
+            }
+        } else true;
+
+        if (all_won) {
+            const board = boards[last_to_win];
+            const score = board.getScore(moves, move);
+            return std.fmt.allocPrint(allocator, "{d}", .{score});
         }
     }
     unreachable;
@@ -114,4 +169,11 @@ test "Day 4a" {
     const actual = try day04a(allocator, test_file);
     defer allocator.free(actual);
     try std.testing.expectEqualStrings("4512", actual);
+}
+
+test "Day 4b" {
+    const allocator = std.testing.allocator;
+    const actual = try day04b(allocator, test_file);
+    defer allocator.free(actual);
+    try std.testing.expectEqualStrings("1924", actual);
 }
