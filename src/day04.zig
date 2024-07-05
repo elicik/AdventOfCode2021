@@ -86,14 +86,6 @@ pub fn day04a(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
         boards[i] = board;
     }
 
-    // var boards = std.ArrayList(Board).init(allocator);
-    // defer boards.deinit();
-    // while (boards_iterator.next()) |raw_board| {
-    //     var board = Board{};
-    //     try board.init(raw_board);
-    //     try boards.append(board);
-    // }
-
     var moves: [100]bool = [_]bool{false} ** 100;
     while (move_draws_iterator.next()) |move_str| {
         const move = try std.fmt.parseInt(u8, move_str, 10);
