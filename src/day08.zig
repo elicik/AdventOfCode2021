@@ -61,21 +61,27 @@ pub fn day08b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
         var signals: [10][]u8 = [_][]u8{""} ** 10;
         const first_half = halves_iterator.first();
         var signal_iterator = std.mem.splitScalar(u8, first_half, ' ');
-        var signal_iterator_i: u4 = 0;
+        var signal_iterator_i: usize = 0;
         while (signal_iterator.next()) |signal| : (signal_iterator_i += 1) {
-            signals[signal_iterator_i] = try std.fmt.allocPrint(allocator, "{s}", .{signal});
-            // defer allocator.free(signals[signal_iterator_i]);
-            // signals[i] = signal;
+            signals[signal_iterator_i] = try allocator.dupe(u8, signal);
+        }
+        defer {
+            for (0..signals.len) |i| {
+                allocator.free(signals[i]);
+            }
         }
 
         var digits: [4][]u8 = [_][]u8{""} ** 4;
         const second_half = halves_iterator.rest();
         var digit_iterator = std.mem.splitScalar(u8, second_half, ' ');
-        var digit_iterator_i: u4 = 0;
+        var digit_iterator_i: usize = 0;
         while (digit_iterator.next()) |digit| : (digit_iterator_i += 1) {
-            digits[digit_iterator_i] = try std.fmt.allocPrint(allocator, "{s}", .{digit});
-            // defer allocator.free(digits[digit_iterator_i]);
-            // digits[i] = digit;
+            digits[digit_iterator_i] = try allocator.dupe(u8, digit);
+        }
+        defer {
+            for (0..digits.len) |i| {
+                allocator.free(digits[i]);
+            }
         }
 
         // Sort for easy comparison later
@@ -86,7 +92,7 @@ pub fn day08b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
             std.mem.sortUnstable(u8, digit, {}, lessThan);
         }
 
-        var signal_index_to_num: [10]?u4 = [_]?u4{null} ** 10;
+        var signal_index_to_num: [10]?usize = [_]?usize{null} ** 10;
         var num_to_signal_index: [10]?usize = [_]?usize{null} ** 10;
 
         // Logic that was explained at the top
@@ -110,7 +116,7 @@ pub fn day08b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
         }
 
         for (signals, 0..) |signal, i| {
-            if (signal_index_to_num[i] == null and signal.len == 5 and isSubsetOf(u8, signals[@intCast(num_to_signal_index[1].?)], signal)) {
+            if (signal_index_to_num[i] == null and signal.len == 5 and isSubsetOf(u8, signals[num_to_signal_index[1].?], signal)) {
                 signal_index_to_num[i] = 3;
                 num_to_signal_index[3] = i;
                 break;
@@ -118,10 +124,10 @@ pub fn day08b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
         }
         for (signals, 0..) |signal, i| {
             if (signal_index_to_num[i] == null and signal.len == 6) {
-                if (isSubsetOf(u8, signals[@intCast(num_to_signal_index[3].?)], signal)) {
+                if (isSubsetOf(u8, signals[num_to_signal_index[3].?], signal)) {
                     signal_index_to_num[i] = 9;
                     num_to_signal_index[9] = i;
-                } else if (isSubsetOf(u8, signals[@intCast(num_to_signal_index[7].?)], signal)) {
+                } else if (isSubsetOf(u8, signals[num_to_signal_index[7].?], signal)) {
                     signal_index_to_num[i] = 0;
                     num_to_signal_index[0] = i;
                 } else {
@@ -132,7 +138,7 @@ pub fn day08b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
         }
         for (signals, 0..) |signal, i| {
             if (signal_index_to_num[i] == null and signal.len == 5) {
-                if (isSubsetOf(u8, signal, signals[@intCast(num_to_signal_index[6].?)])) {
+                if (isSubsetOf(u8, signal, signals[num_to_signal_index[6].?])) {
                     signal_index_to_num[i] = 5;
                     num_to_signal_index[5] = i;
                 } else {
@@ -145,17 +151,10 @@ pub fn day08b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
         for (digits, 0..) |digit, digit_i| {
             const assigned_digit = try for (signals, 0..) |signal, signal_i| {
                 if (std.mem.eql(u8, signal, digit)) {
-                    break signal_index_to_num[signal_i];
+                    break signal_index_to_num[signal_i].?;
                 }
             } else error.UnableToFindAssignment;
-            result += assigned_digit.? * (try std.math.powi(usize, 10, 3 - digit_i));
-        }
-
-        for (0..signals.len) |i| {
-            allocator.free(signals[i]);
-        }
-        for (0..digits.len) |i| {
-            allocator.free(digits[i]);
+            result += assigned_digit * (try std.math.powi(usize, 10, 3 - digit_i));
         }
     }
     return std.fmt.allocPrint(allocator, "{d}", .{result});
