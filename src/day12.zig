@@ -214,20 +214,39 @@ pub fn day12b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
     }
 
     // Move from the array lists back to the node structs cause very annoying otherwise
-    {
-        var node_iterator = nodes.iterator();
-        while (node_iterator.next()) |entry| {
-            const name = entry.key_ptr.*;
-            const node = entry.value_ptr;
-            const node_arr_list_ptr = nodes_leaf_map.getPtr(name).?;
-            node.leafs = node_arr_list_ptr.items;
-        }
+    var node_iterator = nodes.iterator();
+    while (node_iterator.next()) |entry| {
+        const name = entry.key_ptr.*;
+        const node = entry.value_ptr;
+        const node_arr_list_ptr = nodes_leaf_map.getPtr(name).?;
+        node.leafs = node_arr_list_ptr.items;
     }
-    var paths_to_check: std.ArrayList(std.ArrayList([]const u8)) = std.ArrayList(std.ArrayList([]const u8)).init(allocator);
+
+    const Path = struct {
+        steps: std.ArrayList([]const u8),
+        two_smalls: bool,
+        fn init(alloc: std.mem.Allocator) @This() {
+            return @This(){
+                .steps = std.ArrayList([]const u8).init(alloc),
+                .two_smalls = false,
+            };
+        }
+        fn deinit(self: @This()) void {
+            self.steps.deinit();
+        }
+        fn clone(self: @This()) !@This() {
+            return @This(){
+                .steps = try self.steps.clone(),
+                .two_smalls = self.two_smalls,
+            };
+        }
+    };
+
+    var paths_to_check: std.ArrayList(Path) = std.ArrayList(Path).init(allocator);
     defer paths_to_check.deinit();
 
-    var initial_path: std.ArrayList([]const u8) = std.ArrayList([]const u8).init(allocator);
-    try initial_path.append("start");
+    var initial_path: Path = Path.init(allocator);
+    try initial_path.steps.append("start");
     try paths_to_check.append(initial_path);
 
     // Do a little traversing action
@@ -235,7 +254,7 @@ pub fn day12b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
     while (paths_to_check.popOrNull()) |path_to_check| {
         // Once we pop this path, we need to clear its memory
         defer path_to_check.deinit();
-        const node = nodes.get(path_to_check.getLast()).?;
+        const node = nodes.get(path_to_check.steps.getLast()).?;
         if (node.end) {
             total_completed_paths += 1;
             continue;
@@ -243,39 +262,25 @@ pub fn day12b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
 
         for (node.leafs) |leaf| {
             const node_leaf = nodes.get(leaf).?;
-            if (node_leaf.start) {
-                continue;
-            }
-            if (node_leaf.small) {
-                const leaf_in_path: bool = for (path_to_check.items) |node_in_path| {
-                    if (std.mem.eql(u8, leaf, node_in_path)) {
-                        break true;
-                    }
-                } else false;
-
-                // This is the only part that changes for part 2
-                var node_iterator = nodes.iterator();
-                const do_we_have_room_for_two: bool = while (node_iterator.next()) |entry| {
-                    if (entry.value_ptr.small) {
-                        var count: usize = 0;
-                        for (path_to_check.items) |node_in_path| {
-                            if (std.mem.eql(u8, entry.key_ptr.*, node_in_path)) {
-                                count += 1;
-                            }
+            if (!node_leaf.start) {
+                if (node_leaf.small) {
+                    const leaf_in_path: bool = for (path_to_check.steps.items) |node_in_path| {
+                        if (std.mem.eql(u8, leaf, node_in_path)) {
+                            break true;
                         }
-                        if (count > 1) {
-                            break false;
-                        }
+                    } else false;
+                    if (!path_to_check.two_smalls or !leaf_in_path) {
+                        var new_path = try path_to_check.clone();
+                        new_path.two_smalls = path_to_check.two_smalls or leaf_in_path;
+                        try new_path.steps.append(leaf);
+                        try paths_to_check.append(new_path);
                     }
-                } else true;
-
-                if (!do_we_have_room_for_two and leaf_in_path) {
-                    continue;
+                } else {
+                    var new_path = try path_to_check.clone();
+                    try new_path.steps.append(leaf);
+                    try paths_to_check.append(new_path);
                 }
             }
-            var new_path: std.ArrayList([]const u8) = try path_to_check.clone();
-            try new_path.append(leaf);
-            try paths_to_check.append(new_path);
         }
     }
 
