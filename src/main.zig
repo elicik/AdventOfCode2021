@@ -12,6 +12,7 @@ const day10 = @import("day10.zig");
 const day11 = @import("day11.zig");
 const day12 = @import("day12.zig");
 const day13 = @import("day13.zig");
+const day14 = @import("day14.zig");
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
@@ -202,6 +203,20 @@ pub fn main() !void {
             const result = try day13.day13b(allocator, file);
             defer allocator.free(result);
             std.debug.print("Day 13b result: {s}\n", .{result});
+        }
+        if (all or std.mem.eql(u8, arg, "14a")) {
+            const file = try getLinesFromFile(allocator, "src/day14.txt");
+            defer allocator.free(file);
+            const result = try day14.day14a(allocator, file);
+            defer allocator.free(result);
+            std.debug.print("Day 14a result: {s}\n", .{result});
+        }
+        if (all or std.mem.eql(u8, arg, "14b")) {
+            const file = try getLinesFromFile(allocator, "src/day14.txt");
+            defer allocator.free(file);
+            const result = try day14.day14b(allocator, file);
+            defer allocator.free(result);
+            std.debug.print("Day 14b result: {s}\n", .{result});
         }
     }
 }
