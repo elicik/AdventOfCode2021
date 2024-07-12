@@ -47,14 +47,14 @@ const test_file3 =
     \\
 ;
 
-const Node = struct {
-    leafs: [][]const u8 = undefined,
-    small: bool,
-    start: bool,
-    end: bool,
-};
-
 pub fn day12a(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
+    const Node = struct {
+        leafs: [][]const u8 = undefined,
+        small: bool,
+        start: bool,
+        end: bool,
+    };
+
     var nodes = std.StringHashMap(Node).init(allocator);
     defer nodes.deinit();
 
@@ -160,8 +160,25 @@ pub fn day12a(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
 }
 
 pub fn day12b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
+    const Node = struct {
+        leafs: []*@This() = undefined,
+        small: bool,
+        start: bool,
+        end: bool,
+        name: []const u8,
+        fn deinit(self: *@This(), alloc: std.mem.Allocator) void {
+            alloc.free(self.leafs);
+        }
+    };
+
     var nodes = std.StringHashMap(Node).init(allocator);
-    defer nodes.deinit();
+    defer {
+        var nodes_iterator = nodes.valueIterator();
+        while (nodes_iterator.next()) |node_ptr| {
+            node_ptr.deinit(allocator);
+        }
+        nodes.deinit();
+    }
 
     var nodes_leaf_map = std.StringHashMap(std.ArrayList([]const u8)).init(allocator);
     defer {
@@ -190,6 +207,7 @@ pub fn day12b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
                     } else true,
                     .start = std.mem.eql(u8, name, "start"),
                     .end = std.mem.eql(u8, name, "end"),
+                    .name = name,
                 };
                 const arr_list = std.ArrayList([]const u8).init(allocator);
                 try nodes_leaf_map.put(name, arr_list);
@@ -219,26 +237,51 @@ pub fn day12b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
         const name = entry.key_ptr.*;
         const node = entry.value_ptr;
         const node_arr_list_ptr = nodes_leaf_map.getPtr(name).?;
-        node.leafs = node_arr_list_ptr.items;
+
+        node.leafs = try allocator.alloc(*Node, node_arr_list_ptr.items.len);
+        for (node_arr_list_ptr.items, 0..) |leaf_name, leaf_i| {
+            node.leafs[leaf_i] = nodes.getPtr(leaf_name).?;
+        }
     }
 
     const Path = struct {
-        steps: std.ArrayList([]const u8),
         two_smalls: bool,
+        // nodes_in_path: std.AutoHashMap(*Node, void),
+        nodes_in_path: std.ArrayList(*Node),
+        latest_node: *Node = undefined,
         fn init(alloc: std.mem.Allocator) @This() {
             return @This(){
-                .steps = std.ArrayList([]const u8).init(alloc),
                 .two_smalls = false,
+                .nodes_in_path = std.ArrayList(*Node).init(alloc),
+                // .nodes_in_path = std.AutoHashMap(*Node, void).init(alloc),
             };
         }
-        fn deinit(self: @This()) void {
-            self.steps.deinit();
+        fn deinit(self: *@This()) void {
+            self.nodes_in_path.deinit();
         }
-        fn clone(self: @This()) !@This() {
+        fn clone(self: *@This()) !@This() {
             return @This(){
-                .steps = try self.steps.clone(),
                 .two_smalls = self.two_smalls,
+                // .nodes_in_path = try self.nodes_in_path.clone(),
+                .nodes_in_path = try self.nodes_in_path.clone(),
+                .latest_node = self.latest_node,
             };
+        }
+        fn addToPath(self: *@This(), node: *Node) !void {
+            try self.nodes_in_path.append(node);
+            // try self.nodes_in_path.put(node, {});
+            self.latest_node = node;
+        }
+        fn isLeafInPath(self: *@This(), leaf: *Node) bool {
+            // return self.nodes_in_path.contains(leaf);
+            return for (self.nodes_in_path.items) |node| {
+                if (node == leaf) {
+                    break true;
+                }
+            } else false;
+        }
+        fn getLatestNode(self: *@This()) *Node {
+            return self.latest_node;
         }
     };
 
@@ -246,38 +289,34 @@ pub fn day12b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
     defer paths_to_check.deinit();
 
     var initial_path: Path = Path.init(allocator);
-    try initial_path.steps.append("start");
+    try initial_path.addToPath(nodes.getPtr("start").?);
     try paths_to_check.append(initial_path);
 
     // Do a little traversing action
     var total_completed_paths: usize = 0;
     while (paths_to_check.popOrNull()) |path_to_check| {
         // Once we pop this path, we need to clear its memory
-        defer path_to_check.deinit();
-        const node = nodes.get(path_to_check.steps.getLast()).?;
+        var path_to_check_ptr = @constCast(&path_to_check);
+        defer path_to_check_ptr.deinit();
+        const node = path_to_check_ptr.getLatestNode();
         if (node.end) {
             total_completed_paths += 1;
             continue;
         }
 
         for (node.leafs) |leaf| {
-            const node_leaf = nodes.get(leaf).?;
-            if (!node_leaf.start) {
-                if (node_leaf.small) {
-                    const leaf_in_path: bool = for (path_to_check.steps.items) |node_in_path| {
-                        if (std.mem.eql(u8, leaf, node_in_path)) {
-                            break true;
-                        }
-                    } else false;
+            if (!leaf.start) {
+                if (leaf.small) {
+                    const leaf_in_path: bool = path_to_check_ptr.isLeafInPath(leaf);
                     if (!path_to_check.two_smalls or !leaf_in_path) {
-                        var new_path = try path_to_check.clone();
+                        var new_path = try path_to_check_ptr.clone();
                         new_path.two_smalls = path_to_check.two_smalls or leaf_in_path;
-                        try new_path.steps.append(leaf);
+                        try new_path.addToPath(leaf);
                         try paths_to_check.append(new_path);
                     }
                 } else {
-                    var new_path = try path_to_check.clone();
-                    try new_path.steps.append(leaf);
+                    var new_path = try path_to_check_ptr.clone();
+                    try new_path.addToPath(leaf);
                     try paths_to_check.append(new_path);
                 }
             }
