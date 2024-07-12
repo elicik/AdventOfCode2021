@@ -166,10 +166,30 @@ pub fn day12b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
         start: bool,
         end: bool,
         name: []const u8,
+        id: u128,
         fn deinit(self: *@This(), alloc: std.mem.Allocator) void {
             alloc.free(self.leafs);
         }
+
+        var primes: std.ArrayList(u128) = undefined;
+        fn generateNextPrime() !u128 {
+            // Slow but also very unimportant, this will not be called many times
+            var candidate: u128 = 2;
+            while (true) : (candidate += 1) {
+                const is_divisible_by_prime = for (@This().primes.items) |prime_num| {
+                    if (candidate % prime_num == 0) {
+                        break true;
+                    }
+                } else false;
+                if (!is_divisible_by_prime) {
+                    try @This().primes.append(candidate);
+                    return candidate;
+                }
+            }
+        }
     };
+    Node.primes = std.ArrayList(u128).init(allocator);
+    defer Node.primes.deinit();
 
     var nodes = std.StringHashMap(Node).init(allocator);
     defer {
@@ -208,6 +228,7 @@ pub fn day12b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
                     .start = std.mem.eql(u8, name, "start"),
                     .end = std.mem.eql(u8, name, "end"),
                     .name = name,
+                    .id = try Node.generateNextPrime(),
                 };
                 const arr_list = std.ArrayList([]const u8).init(allocator);
                 try nodes_leaf_map.put(name, arr_list);
@@ -245,40 +266,22 @@ pub fn day12b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
     }
 
     const Path = struct {
-        two_smalls: bool,
-        // nodes_in_path: std.AutoHashMap(*Node, void),
-        nodes_in_path: std.ArrayList(*Node),
+        two_smalls: bool = false,
+        nodes_in_path: u128 = 1,
         latest_node: *Node = undefined,
-        fn init(alloc: std.mem.Allocator) @This() {
-            return @This(){
-                .two_smalls = false,
-                .nodes_in_path = std.ArrayList(*Node).init(alloc),
-                // .nodes_in_path = std.AutoHashMap(*Node, void).init(alloc),
-            };
-        }
-        fn deinit(self: *@This()) void {
-            self.nodes_in_path.deinit();
-        }
         fn clone(self: *@This()) !@This() {
             return @This(){
                 .two_smalls = self.two_smalls,
-                // .nodes_in_path = try self.nodes_in_path.clone(),
-                .nodes_in_path = try self.nodes_in_path.clone(),
+                .nodes_in_path = self.nodes_in_path,
                 .latest_node = self.latest_node,
             };
         }
         fn addToPath(self: *@This(), node: *Node) !void {
-            try self.nodes_in_path.append(node);
-            // try self.nodes_in_path.put(node, {});
+            self.nodes_in_path *= node.id;
             self.latest_node = node;
         }
         fn isLeafInPath(self: *@This(), leaf: *Node) bool {
-            // return self.nodes_in_path.contains(leaf);
-            return for (self.nodes_in_path.items) |node| {
-                if (node == leaf) {
-                    break true;
-                }
-            } else false;
+            return self.nodes_in_path % leaf.id == 0;
         }
         fn getLatestNode(self: *@This()) *Node {
             return self.latest_node;
@@ -288,16 +291,14 @@ pub fn day12b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
     var paths_to_check: std.ArrayList(Path) = std.ArrayList(Path).init(allocator);
     defer paths_to_check.deinit();
 
-    var initial_path: Path = Path.init(allocator);
+    var initial_path: Path = Path{};
     try initial_path.addToPath(nodes.getPtr("start").?);
     try paths_to_check.append(initial_path);
 
     // Do a little traversing action
     var total_completed_paths: usize = 0;
     while (paths_to_check.popOrNull()) |path_to_check| {
-        // Once we pop this path, we need to clear its memory
         var path_to_check_ptr = @constCast(&path_to_check);
-        defer path_to_check_ptr.deinit();
         const node = path_to_check_ptr.getLatestNode();
         if (node.end) {
             total_completed_paths += 1;
