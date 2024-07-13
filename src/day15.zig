@@ -22,63 +22,30 @@ pub fn day15a(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
             return self.row == other.row and self.col == other.col;
         }
     };
-    const Path = struct {
-        locations: std.ArrayList(Position),
+
+    const Node = struct {
+        pos: Position,
         risk: usize,
-        fn init(alloc: std.mem.Allocator) @This() {
-            return @This(){
-                .locations = std.ArrayList(Position).init(alloc),
-                .risk = 0,
-            };
-        }
-        fn deinit(self: *@This()) void {
-            self.locations.deinit();
-        }
-        fn clone(self: *@This()) !@This() {
-            return @This(){
-                .locations = try self.locations.clone(),
-                .risk = self.risk,
-            };
-        }
-        fn addLocation(self: *@This(), pos: Position, risk: usize) !void {
-            try self.locations.append(pos);
-            self.risk += risk;
-        }
-        fn isLocationInPath(self: *@This(), pos: Position) bool {
-            return for (self.locations.items) |previous_location| {
-                if (pos.eql(previous_location)) {
-                    break true;
-                }
-            } else false;
+        g_score: usize = std.math.maxInt(usize), // Cheapest known risk from start to pos
+        f_score: usize = std.math.maxInt(usize), // g_score + heuristic to goal (minimum value required to hit goal)
+        fn heuristic(self: @This(), grid_size: usize) usize {
+            // Manhattan distance
+            return (grid_size - 1 - self.pos.row) + (grid_size - 1 - self.pos.col);
         }
     };
 
     // A lil quadratic formula never hurt nobody
     const grid_size: usize = (std.math.sqrt(1 + 4 * file.len) - 1) / 2;
 
-    const risk_grid: [][]u4 = try allocator.alloc([]u4, grid_size);
+    const grid: [][]Node = try allocator.alloc([]Node, grid_size);
     for (0..grid_size) |row_i| {
-        risk_grid[row_i] = try allocator.alloc(u4, grid_size);
+        grid[row_i] = try allocator.alloc(Node, grid_size);
     }
     defer {
         for (0..grid_size) |row_i| {
-            allocator.free(risk_grid[row_i]);
+            allocator.free(grid[row_i]);
         }
-        allocator.free(risk_grid);
-    }
-
-    const minimum_distance_grid: [][]usize = try allocator.alloc([]usize, grid_size);
-    for (0..grid_size) |row_i| {
-        minimum_distance_grid[row_i] = try allocator.alloc(usize, grid_size);
-        for (0..grid_size) |col_i| {
-            minimum_distance_grid[row_i][col_i] = std.math.maxInt(usize);
-        }
-    }
-    defer {
-        for (0..grid_size) |row_i| {
-            allocator.free(minimum_distance_grid[row_i]);
-        }
-        allocator.free(minimum_distance_grid);
+        allocator.free(grid);
     }
 
     var grid_i: usize = 0;
@@ -88,100 +55,88 @@ pub fn day15a(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
         }
         const row = grid_i / grid_size;
         const col = grid_i % grid_size;
-        risk_grid[row][col] = try std.fmt.parseInt(u4, ([_]u8{char})[0..1], 10);
+        const risk = try std.fmt.parseInt(u4, ([_]u8{char})[0..1], 10);
+        grid[row][col] = Node{
+            .pos = .{
+                .row = row,
+                .col = col,
+            },
+            .risk = risk,
+        };
         grid_i += 1;
     }
 
-    // BFS
-    var stack: std.fifo.LinearFifo(Path, .Dynamic) = std.fifo.LinearFifo(Path, .Dynamic).init(allocator);
-    defer stack.deinit();
+    var start = grid[0][0];
+    const goal = grid[grid_size - 1][grid_size - 1];
 
-    minimum_distance_grid[0][0] = 0;
-    var initial_path = Path.init(allocator);
-    try initial_path.addLocation(.{ .row = 0, .col = 0 }, 0);
-    initial_path.risk = 0;
-    try stack.writeItem(initial_path);
+    const NodeContext = struct {
+        grid: [][]Node,
+    };
+    const NodeComparer = struct {
+        fn lessThan(context: NodeContext, a: Position, b: Position) std.math.Order {
+            const node_a = context.grid[a.row][a.col];
+            const node_b = context.grid[b.row][b.col];
+            return std.math.order(node_a.f_score, node_b.f_score);
+        }
+    };
 
-    while (stack.readItem()) |path| {
-        const path_ptr = @constCast(&path);
-        defer path_ptr.deinit();
-        const pos = path.locations.getLast();
-        // if (pos.col == grid_size - 1 and pos.row == grid_size - 1) {
-        // std.debug.print("({any}): risk is {d}, stack size is {d}\n", .{ pos, path.risk, stack.count });
-        //     if (path.risk < minimum_risk) {
-        //         std.debug.print("Set new minimum risk\n", .{});
-        //         minimum_risk = path.risk;
-        //     }
-        //     continue;
-        // }
+    // A*
+    var priority_queue = std.PriorityQueue(Position, NodeContext, NodeComparer.lessThan).init(allocator, .{ .grid = grid });
+    defer priority_queue.deinit();
 
-        if (pos.row != 0) {
-            const new_pos = Position{
+    grid[0][0].g_score = 0;
+    grid[0][0].f_score = start.heuristic(grid_size);
+
+    try priority_queue.add(start.pos);
+
+    while (priority_queue.removeOrNull()) |pos| {
+        if (pos.eql(goal.pos)) {
+            break;
+        }
+        const node = grid[pos.row][pos.col];
+
+        const neighbors = [_]?Position{
+            if (pos.row != 0) (.{
                 .row = pos.row - 1,
                 .col = pos.col,
-            };
-            if (!path_ptr.isLocationInPath(new_pos)) {
-                var new_path = try path_ptr.clone();
-                try new_path.addLocation(new_pos, risk_grid[new_pos.row][new_pos.col]);
-                if (new_path.risk < minimum_distance_grid[new_pos.row][new_pos.col]) {
-                    minimum_distance_grid[new_pos.row][new_pos.col] = new_path.risk;
-                    try stack.writeItem(new_path);
-                } else {
-                    new_path.deinit();
-                }
-            }
-        }
-        if (pos.row != grid_size - 1) {
-            const new_pos = Position{
+            }) else null,
+            if (pos.row != grid_size - 1) (.{
                 .row = pos.row + 1,
                 .col = pos.col,
-            };
-            if (!path_ptr.isLocationInPath(new_pos)) {
-                var new_path = try path_ptr.clone();
-                try new_path.addLocation(new_pos, risk_grid[new_pos.row][new_pos.col]);
-                if (new_path.risk < minimum_distance_grid[new_pos.row][new_pos.col]) {
-                    minimum_distance_grid[new_pos.row][new_pos.col] = new_path.risk;
-                    try stack.writeItem(new_path);
-                } else {
-                    new_path.deinit();
-                }
-            }
-        }
-        if (pos.col != 0) {
-            const new_pos = Position{
+            }) else null,
+            if (pos.col != 0) (.{
                 .row = pos.row,
                 .col = pos.col - 1,
-            };
-            if (!path_ptr.isLocationInPath(new_pos)) {
-                var new_path = try path_ptr.clone();
-                try new_path.addLocation(new_pos, risk_grid[new_pos.row][new_pos.col]);
-                if (new_path.risk < minimum_distance_grid[new_pos.row][new_pos.col]) {
-                    minimum_distance_grid[new_pos.row][new_pos.col] = new_path.risk;
-                    try stack.writeItem(new_path);
-                } else {
-                    new_path.deinit();
-                }
-            }
-        }
-        if (pos.col != grid_size - 1) {
-            const new_pos = Position{
+            }) else null,
+            if (pos.col != grid_size - 1) (.{
                 .row = pos.row,
                 .col = pos.col + 1,
-            };
-            if (!path_ptr.isLocationInPath(new_pos)) {
-                var new_path = try path_ptr.clone();
-                try new_path.addLocation(new_pos, risk_grid[new_pos.row][new_pos.col]);
-                if (new_path.risk < minimum_distance_grid[new_pos.row][new_pos.col]) {
-                    minimum_distance_grid[new_pos.row][new_pos.col] = new_path.risk;
-                    try stack.writeItem(new_path);
-                } else {
-                    new_path.deinit();
+            }) else null,
+        };
+        for (neighbors) |new_pos_optional| {
+            if (new_pos_optional) |new_pos| {
+                var new_node_ptr = &(grid[new_pos.row][new_pos.col]);
+                // Prevent overflow
+                const distance_from_start_to_new_node: usize = node.g_score +| new_node_ptr.risk;
+                if (distance_from_start_to_new_node < new_node_ptr.g_score) {
+                    new_node_ptr.g_score = distance_from_start_to_new_node;
+                    new_node_ptr.f_score = distance_from_start_to_new_node + new_node_ptr.heuristic(grid_size);
+
+                    var queue_iterator = priority_queue.iterator();
+                    const neighbor_in_queue = while (queue_iterator.next()) |other_position| {
+                        if (new_node_ptr.pos.eql(other_position)) {
+                            break true;
+                        }
+                    } else false;
+                    if (!neighbor_in_queue) {
+                        try priority_queue.add(new_node_ptr.pos);
+                    }
                 }
             }
         }
     }
 
-    return std.fmt.allocPrint(allocator, "{d}", .{minimum_distance_grid[grid_size - 1][grid_size - 1]});
+    return std.fmt.allocPrint(allocator, "{d}", .{grid[grid_size - 1][grid_size - 1].g_score});
 }
 
 pub fn day15b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
