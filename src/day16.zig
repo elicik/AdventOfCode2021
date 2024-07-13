@@ -18,13 +18,19 @@ const test_file4 =
 ;
 
 const PacketType = enum(u3) {
-    Literal = 4,
-    Operator,
+    Sum,
+    Product,
+    Minimum,
+    Maximum,
+    Literal,
+    GreaterThan,
+    LessThan,
+    EqualTo,
 };
 
 const LiteralGroup = struct {
     last_group: u1,
-    group_bits: u4,
+    group_bits: []u1,
 };
 
 const LengthType = enum(u1) {
@@ -56,7 +62,7 @@ const OperatorValue = struct {
     }
 };
 
-const PacketValue = union(PacketType) {
+const PacketValue = union(enum) {
     Literal: LiteralValue,
     Operator: OperatorValue,
     fn deinit(self: @This(), allocator: std.mem.Allocator) void {
@@ -69,6 +75,7 @@ const PacketValue = union(PacketType) {
 
 const Packet = struct {
     packet_version: u3,
+    packet_type: PacketType,
     packet_value: PacketValue,
     remaining_bits: []u1,
     fn deinit(self: @This(), allocator: std.mem.Allocator) void {
@@ -90,7 +97,7 @@ fn convertBitsToNumber(comptime T: type, bits: []u1) !T {
     switch (@typeInfo(T)) {
         .Int => |int| {
             const num_bits = int.bits;
-            if (num_bits != bits.len) {
+            if (num_bits < bits.len) {
                 return error.WrongBitLength;
             }
             var result: T = 0;
@@ -108,22 +115,9 @@ fn convertBitsToNumber(comptime T: type, bits: []u1) !T {
 }
 
 fn convertBitsToPacket(allocator: std.mem.Allocator, bits: []u1) !Packet {
-    // {
-    //     var bits_str = std.ArrayList(u8).init(allocator);
-    //     defer bits_str.deinit();
-    //     var writer = bits_str.writer();
-    //     for (bits) |bit| {
-    //         try writer.writeByte(if (bit == 1) '1' else '0');
-    //     }
-    //     std.debug.print("Converting packet with {d} remaining bits: {s}\n", .{ bits.len, bits_str.items });
-    // }
     const version = try convertBitsToNumber(u3, bits[0..3]);
     const packet_type_num = try convertBitsToNumber(u3, bits[3..6]);
-    // Can't use @enumFromInt because any non-4 is an operator
-    const packet_type: PacketType = switch (packet_type_num) {
-        @intFromEnum(PacketType.Literal) => PacketType.Literal,
-        else => PacketType.Operator,
-    };
+    const packet_type: PacketType = @enumFromInt(packet_type_num);
     var packet_value: PacketValue = undefined;
     var remaining_bits: []u1 = bits[6..];
     switch (packet_type) {
@@ -133,7 +127,7 @@ fn convertBitsToPacket(allocator: std.mem.Allocator, bits: []u1) !Packet {
             while (true) {
                 const literal_group = LiteralGroup{
                     .last_group = remaining_bits[0],
-                    .group_bits = try convertBitsToNumber(u4, remaining_bits[1..5]),
+                    .group_bits = remaining_bits[1..5],
                 };
                 remaining_bits = remaining_bits[5..];
                 try literal_groups.append(literal_group);
@@ -145,7 +139,7 @@ fn convertBitsToPacket(allocator: std.mem.Allocator, bits: []u1) !Packet {
                 .groups = try literal_groups.toOwnedSlice(),
             } };
         },
-        .Operator => {
+        else => {
             const length_type: LengthType = @enumFromInt(remaining_bits[0]);
             remaining_bits = remaining_bits[1..];
             var subpacket_number: SubpacketNumber = undefined;
@@ -186,6 +180,7 @@ fn convertBitsToPacket(allocator: std.mem.Allocator, bits: []u1) !Packet {
     }
     return Packet{
         .packet_version = version,
+        .packet_type = packet_type,
         .packet_value = packet_value,
         .remaining_bits = remaining_bits,
     };
@@ -199,6 +194,75 @@ fn getVersionSum(packet: Packet) usize {
         .Operator => |operator_value| {
             for (operator_value.subpackets) |subpacket| {
                 result += getVersionSum(subpacket);
+            }
+        },
+    }
+    return result;
+}
+
+fn getValue(packet: Packet) usize {
+    var result: usize = 0;
+    switch (packet.packet_value) {
+        .Literal => |literal_value| {
+            for (literal_value.groups) |group| {
+                for (group.group_bits) |bit| {
+                    result += bit;
+                    result <<= 1;
+                }
+            }
+            result >>= 1;
+        },
+        .Operator => |operator_value| {
+            switch (packet.packet_type) {
+                .Sum => {
+                    result = 0;
+                    for (operator_value.subpackets) |subpacket| {
+                        result += getValue(subpacket);
+                    }
+                },
+                .Product => {
+                    result = 1;
+                    for (operator_value.subpackets) |subpacket| {
+                        result *= getValue(subpacket);
+                    }
+                },
+                .Minimum => {
+                    result = std.math.maxInt(usize);
+                    for (operator_value.subpackets) |subpacket| {
+                        const value = getValue(subpacket);
+                        if (value < result) {
+                            result = value;
+                        }
+                    }
+                },
+                .Maximum => {
+                    result = std.math.minInt(usize);
+                    for (operator_value.subpackets) |subpacket| {
+                        const value = getValue(subpacket);
+                        if (value > result) {
+                            result = value;
+                        }
+                    }
+                },
+                .GreaterThan => {
+                    std.debug.assert(operator_value.subpackets.len == 2);
+                    const a = getValue(operator_value.subpackets[0]);
+                    const b = getValue(operator_value.subpackets[1]);
+                    result = if (a > b) 1 else 0;
+                },
+                .LessThan => {
+                    std.debug.assert(operator_value.subpackets.len == 2);
+                    const a = getValue(operator_value.subpackets[0]);
+                    const b = getValue(operator_value.subpackets[1]);
+                    result = if (a < b) 1 else 0;
+                },
+                .EqualTo => {
+                    std.debug.assert(operator_value.subpackets.len == 2);
+                    const a = getValue(operator_value.subpackets[0]);
+                    const b = getValue(operator_value.subpackets[1]);
+                    result = if (a == b) 1 else 0;
+                },
+                else => unreachable,
             }
         },
     }
@@ -227,7 +291,24 @@ pub fn day16a(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
 }
 
 pub fn day16b(allocator: std.mem.Allocator, file: []const u8) ![]const u8 {
-    return std.fmt.allocPrint(allocator, "{s}", .{file});
+    const num_bits: usize = (file.len - 1) * 4;
+
+    const bits = try allocator.alloc(u1, num_bits);
+    defer allocator.free(bits);
+    var file_i: usize = 0;
+    // Skip the newline at the end
+    while (file_i < file.len - 1) : (file_i += 1) {
+        const converted = try convertHexToBits(file[file_i]);
+        for (0..4) |sub_i| {
+            bits[4 * file_i + sub_i] = converted[sub_i];
+        }
+    }
+
+    const packet = try convertBitsToPacket(allocator, bits);
+    defer packet.deinit(allocator);
+    const value = getValue(packet);
+
+    return std.fmt.allocPrint(allocator, "{d}", .{value});
 }
 
 test "Day 16a - 1" {
@@ -258,9 +339,60 @@ test "Day 16a - 4" {
     try std.testing.expectEqualStrings("31", actual);
 }
 
-// test "Day 16b" {
-//     const allocator = std.testing.allocator;
-//     const actual = try day16b(allocator, test_file);
-//     defer allocator.free(actual);
-//     try std.testing.expectEqualStrings("316", actual);
-// }
+// Part 2
+
+test "Day 16b - 1" {
+    const allocator = std.testing.allocator;
+    const actual = try day16b(allocator, "C200B40A82\n");
+    defer allocator.free(actual);
+    try std.testing.expectEqualStrings("3", actual);
+}
+
+test "Day 16b - 2" {
+    const allocator = std.testing.allocator;
+    const actual = try day16b(allocator, "04005AC33890\n");
+    defer allocator.free(actual);
+    try std.testing.expectEqualStrings("54", actual);
+}
+
+test "Day 16b - 3" {
+    const allocator = std.testing.allocator;
+    const actual = try day16b(allocator, "880086C3E88112\n");
+    defer allocator.free(actual);
+    try std.testing.expectEqualStrings("7", actual);
+}
+
+test "Day 16b - 4" {
+    const allocator = std.testing.allocator;
+    const actual = try day16b(allocator, "CE00C43D881120\n");
+    defer allocator.free(actual);
+    try std.testing.expectEqualStrings("9", actual);
+}
+
+test "Day 16b - 5" {
+    const allocator = std.testing.allocator;
+    const actual = try day16b(allocator, "D8005AC2A8F0\n");
+    defer allocator.free(actual);
+    try std.testing.expectEqualStrings("1", actual);
+}
+
+test "Day 16b - 6" {
+    const allocator = std.testing.allocator;
+    const actual = try day16b(allocator, "F600BC2D8F\n");
+    defer allocator.free(actual);
+    try std.testing.expectEqualStrings("0", actual);
+}
+
+test "Day 16b - 7" {
+    const allocator = std.testing.allocator;
+    const actual = try day16b(allocator, "9C005AC2F8F0\n");
+    defer allocator.free(actual);
+    try std.testing.expectEqualStrings("0", actual);
+}
+
+test "Day 16b - 8" {
+    const allocator = std.testing.allocator;
+    const actual = try day16b(allocator, "9C0141080250320F1802104A08\n");
+    defer allocator.free(actual);
+    try std.testing.expectEqualStrings("1", actual);
+}
