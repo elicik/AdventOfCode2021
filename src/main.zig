@@ -17,6 +17,7 @@ const modules = [_]?type{
     @import("day12.zig"),
     @import("day13.zig"),
     @import("day14.zig"),
+    @import("day15.zig"),
 };
 
 pub fn main() !void {
@@ -29,8 +30,7 @@ pub fn main() !void {
     for (args[1..]) |arg| {
         inline for (1..modules.len) |day_num| {
             inline for ("ab") |part| {
-                const day_char = std.fmt.digitToChar(day_num, .lower);
-                const arg_slice = [_]u8{ day_char, part };
+                const arg_slice = std.fmt.comptimePrint("{d}{c}", .{ day_num, part });
                 if (all or std.mem.eql(u8, arg, arg_slice[0..])) {
                     const day_padded_slice = std.fmt.comptimePrint("src/day{d:0>2}.txt", .{day_num});
                     const module = modules[day_num].?;
