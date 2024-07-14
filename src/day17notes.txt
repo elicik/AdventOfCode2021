@@ -1,0 +1,72 @@
+x, y = 0,0
+v_x, v_y = ?, ?
+
+
+for num_steps:
+x += v_x
+y += v_y
+v_x gets one closer to 0
+v_y -= 1
+
+we can say that we missed the goal, once y < min_y
+
+goal: what is the highest y
+restrictions we know:
+v_x_0 > 0, because otherwise you could never get there
+
+After n steps:
+x = v_x_0 + (v_x_0 - 1) + ... (v_x_0 - min(n-1, v_x_0))
+or: x = two series: for the first v_x_0 steps, it's v_x_0 + (v_x_0 - 1) + ... (v_x_0 - n), and for the last (n-v_x_0) steps it's 0, 0, 0, 
+
+y = v_y_0 + v_y_0 - 1 + ... (v_y_0 - (n-1))
+
+Formula is average of first and last, times the number of terms: a + (a + 1) ... + b = (a+b) / 2 * (b - a + 1)
+
+In other words:
+After n steps, this is the position of x, y:
+x = if n <= v_x_0: (v_x_0 - n/2)  * (n + 1)
+    else: v_x_0 * (v_x_0 + 1) / 2
+
+y = (v_y_0 - n + 1 + v_y_0) / 2 * (v_y_0 - (v_y_0 - (n-1)) + 1) ->
+y = (2*v_y_0 - n + 1)/2)  * (n)
+
+
+old: y = (v_y_0 - n/2)  * (n + 1)
+
+
+We don't really care about solving n, as long as there's an integer solution
+We kinda have a system of inequalities, with a piecewise component:
+(2*v_y_0 - n + 1)/2)  * (n)  >= y_min
+(2*v_y_0 - n + 1)/2)  * (n)  <= y_max
+if n <= v_x_0: (v_x_0 - n/2)  * (n + 1) else: v_x_0 * (v_x_0 + 1) / 2 >= x_min
+if n <= v_x_0: (v_x_0 - n/2)  * (n + 1) else: v_x_0 * (v_x_0 + 1) / 2 <= x_max
+
+So maybe we solve use the y inequalities to solve for possible v_y_0, then use the n values for that to solve x?
+
+v_y_0 >= (y_min * 2 / n - 1 + n) / 2
+
+(2 * y_max / n - 1 + n) / 2 >= v_y_0 >= (2 * y_min / n - 1 + n) / 2
+
+Old: (y_max) / (n + 1) + n/2 >= v_y_0 >= (y_min) / (n + 1) + n/2
+We can make a table now, starting at n=0 and going up until... (v_y_0 - n/2)  * (n + 1) < y_min for every v_y_0 that fills the equation? Probs there is a better stopping point but that should work
+
+Then, once we have a table of every possible v_y_0/n combination, we can filter those by which v_x_0s actually fit there (because we have the n for those)
+Now, we have every v_x_0, v_y_0, and n combo. We should discard the n and the x, this is just a list of every single velocity that can get us to the target area.
+Just take the maximum v_y_0, calc steps until they start decreasing, and that's our best height
+
+v_x_0 * (v_x_0 + 1) / 2 >= x_min
+v_x_0 * (v_x_0 + 1) / 2 <= x_max
+
+v = v_x_0
+v^2 + v - 2*x_min >= 0
+v^2 + v - 2*x_max <= 0
+
+roots are: (-1+-sqrt(1+8z))/2 for pos x_min/x_max
+(v-(-1+sqrt(1+8z))/2) * (v-(-1-sqrt(1+8z))/2) >= 0 (greater than for x_min, less than for x_max)
+Lets say v is between (-1+sqrt(1+8z))/2 and (-1-sqrt(1+8z))/2: (such as -1/2)
+We want the signage of: (-1/2-(-1+sqrt(1+8z))/2) * (-1/2-(-1-sqrt(1+8z))/2) 
+That's equal to -(1+8z)/4, which is negative.
+
+So for positive x_min and x_max, we know the following:
+v is in the range: (-inf, (-1-sqrt(1+8*x_min))/2)] and [(-1+sqrt(1+8*x_min))/2), inf)
+v is in the range: [(-1-sqrt(1+8*x_max))/2), (-1+sqrt(1+8*x_max))/2)]

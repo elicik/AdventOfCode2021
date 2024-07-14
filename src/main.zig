@@ -19,6 +19,7 @@ const modules = [_]?type{
     @import("day14.zig"),
     @import("day15.zig"),
     @import("day16.zig"),
+    @import("day17.zig"),
 };
 
 pub fn main() !void {
